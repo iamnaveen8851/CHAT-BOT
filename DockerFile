@@ -1,0 +1,53 @@
+# =========================
+# Stage 1: Build
+# =========================
+FROM node:24-alpine AS builder
+
+WORKDIR /usr/src/app
+
+# Copy package files first (better caching)
+COPY package*.json ./
+
+# run npm ci
+RUN  npm ci
+
+# Copy application source
+COPY . .
+
+# Build NestJS app
+RUN npm run build
+
+
+# =========================
+# Stage 2: Production
+# =========================
+FROM node:24-alpine
+
+ENV TZ=Asia/Kolkata
+
+# Install required packages
+RUN apk add --no-cache bash curl tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+    echo $TZ > /etc/timezone
+
+WORKDIR /usr/src/app
+
+# Copy package files
+COPY package*.json ./
+
+# Copy env file
+COPY env-uat-document ./
+
+# Install only production dependencies with cache
+RUN npm ci --omit=dev --ignore-scripts && \
+    npm cache clean --force
+
+# Rename env file
+RUN cp env-uat-document .env
+
+# Copy built application
+COPY --from=builder /usr/src/app/dist ./dist
+
+EXPOSE 3000
+
+CMD ["node", "dist/main"]
